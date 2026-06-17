@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>校园三维模型演示</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cesium@1.136/Build/Cesium/Widgets/widgets.css">
+  <style>
+    :root{
+      --bg-panel: rgba(8,18,28,0.62);
+      --panel-border: rgba(255,255,255,0.06);
+      --accent: #0ea5ff;
+      --muted: rgba(255,255,255,0.85);
+      --glass: rgba(255,255,255,0.03);
+      --glass-strong: rgba(255,255,255,0.06);
+      --shadow: 0 12px 30px rgba(2,6,23,0.6);
+      --radius: 12px;
+    }
+
+    html, body, #cesiumContainer { width:100%; height:100%; margin:0; padding:0; overflow:hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; color:var(--muted); }
+
+    /* 顶部标题（更醒目） */
+    #header { position:fixed; top:14px; left:50%; transform:translateX(-50%); z-index:20; color:#fff; font-size:20px; font-weight:800; padding:12px 20px; border-radius:16px; display:flex; align-items:center; gap:12px; background:linear-gradient(90deg, rgba(6,16,30,0.9), rgba(2,8,20,0.75)); box-shadow:var(--shadow); border:1px solid rgba(255,255,255,0.03); }
+    #header .logo { width:40px; height:40px; border-radius:9px; display:inline-flex; align-items:center; justify-content:center; font-weight:700; color:#002; background:linear-gradient(135deg,var(--accent),#4dd0e1); box-shadow:0 6px 18px rgba(14,165,255,0.12); }
+    #header .title{ font-size:20px; letter-spacing:0.3px; }
+
+    /* 性能（左上）与位置信息（右上） */
+    #perfPanel { position:fixed; top:18px; left:18px; z-index:18; width:220px; }
+    #posPanel { position:fixed; top:18px; right:18px; z-index:18; width:200px; text-align:left; }
+
+    /* 工具条：底部居中横向 */
+    #leftSidebar { position:fixed; left:50%; bottom:18px; transform:translateX(-50%); z-index:18; display:flex; flex-direction:row; gap:12px; align-items:center; padding:8px 12px; background:linear-gradient(180deg, rgba(0,0,0,0.18), rgba(0,0,0,0.08)); border-radius:14px; box-shadow:0 10px 30px rgba(2,6,23,0.45); }
+    .sidebar-btn { background:var(--glass); border:1px solid var(--panel-border); color:var(--muted); width:46px; height:46px; border-radius:10px; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:14px; transition:all .18s ease; }
+    .sidebar-btn:hover { transform:translateY(-3px); box-shadow:0 8px 18px rgba(2,6,23,0.45); color:#fff; }
+    .sidebar-btn.active { background:linear-gradient(180deg, rgba(14,165,255,0.12), rgba(0,120,200,0.06)); color:var(--accent); box-shadow:0 10px 26px rgba(14,165,255,0.12); }
+
+    /* 左侧面板容器已保留以防后续控件依赖，单项面板使用 fixed 定位显示 */
+
+    .panel { background:var(--bg-panel); color:#fff; padding:12px; border-radius:var(--radius); box-shadow:var(--shadow); border:1px solid var(--panel-border); font-size:13px; backdrop-filter: blur(6px); }
+    .panel h4 { margin:0 0 8px 0; font-size:13px; color:#e6f7ff; font-weight:600; }
+
+    /* 弹窗样式：在底部工具栏上方弹出，内容横向排列 */
+    #sidebarPopover { display:none; position:absolute; max-width:92vw; z-index:9999; transition:transform .18s ease, opacity .18s ease; transform-origin:center bottom; border-radius:14px; }
+    #sidebarPopover.panel { padding:12px; }
+    /* 使二级菜单区块横向排列并换行 */
+    #sidebarPopover .section-row { display:flex; flex-direction:row; gap:12px; align-items:flex-start; flex-wrap:wrap; }
+    #sidebarPopover .section-row > * { min-width:180px; flex:1 1 auto; }
+
+    /* 控件微调 */
+    button { padding:6px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.04); background:transparent; color:var(--muted); cursor:pointer; transition:all .12s ease; }
+    button:hover { background:var(--glass-strong); color:#fff; }
+
+    input[type=file] { cursor:pointer; }
+
+    /* 窄屏响应式优化：更细致的换行与位置调整 */
+    @media (max-width:900px){
+      /* 头部与工具条微调 */
+      #header { font-size:18px; padding:10px 14px; }
+      #leftSidebar { bottom:12px; gap:8px; padding:8px 10px; }
+      .sidebar-btn { width:42px; height:42px; }
+
+      /* 弹窗在窄屏时横向改为纵向并尽量撑满上方空间 */
+      #sidebarPopover { max-width: calc(100% - 32px); position: fixed !important; left: 50% !important; transform: translateX(-50%) !important; bottom: auto !important; top: auto !important; }
+      #sidebarPopover .section-row { flex-direction: column; gap:10px; }
+      #sidebarPopover .section-row > * { min-width: 100%; }
+
+      /* 性能/位置信息调整为小面板，保持可见 */
+      #perfPanel, #posPanel { width:auto; font-size:12px; padding:8px; }
+      #perfPanel { left:12px; top:12px; }
+      #posPanel { right:12px; top:12px; }
+    }
+
+    @media (max-width:480px){
+      #header { font-size:16px; padding:8px 12px; }
+      .sidebar-btn { width:38px; height:38px; font-size:13px; }
+      #sidebarPopover { max-width: calc(100% - 16px); left: 8px !important; transform: none !important; }
+      #sidebarPopover .section-row > * { min-width: 100%; }
+      #perfPanel, #posPanel { font-size:11px; padding:6px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="cesiumContainer" tabindex="0"></div>
+  <div id="header">校园实景三维模型可视化平台</div>
+
+  <!-- 测量结果显示面板：固定底部居中 -->
+  <div id="measureResult" style="display:none; position:fixed; bottom:80px; left:50%; transform:translateX(-50%); z-index:9999; background:rgba(8,18,28,0.88); color:#fff; padding:10px 18px; border-radius:10px; font-size:14px; box-shadow:0 8px 24px rgba(2,6,23,0.6); border:1px solid rgba(255,255,255,0.1); backdrop-filter:blur(6px);"></div>
+
+  <!-- 剖面图面板 -->
+  <canvas id="profileCanvas" width="360" height="220" style="display:none; position:fixed; bottom:120px; left:50%; transform:translateX(-50%); z-index:9998; background:rgba(8,18,28,0.9); border-radius:10px; box-shadow:0 8px 24px rgba(2,6,23,0.6); border:1px solid rgba(255,255,255,0.1);"></canvas>
+
+  <div id="leftSidebar" aria-hidden="false">
+    <button class="sidebar-btn" id="btn-tools" title="工具">工具</button>
+    <button class="sidebar-btn" id="btn-layers" title="图层">图层</button>
+    <button class="sidebar-btn" id="btn-views" title="视角">视角</button>
+    <button class="sidebar-btn" id="btn-measure-distance" title="测距">测距</button>
+    <button class="sidebar-btn" id="btn-measure-area" title="测面">测面</button>
+    <button class="sidebar-btn" id="btn-measure-profile" title="剖面">剖面</button>
+    <button class="sidebar-btn" id="btn-clear-measure" title="清除">清除</button>
+  </div>
+
+  <div id="leftPanel">
+    <div id="perfPanel" class="panel">
+      <h4>性能分析</h4>
+      <div>加载时间: <strong id="loadTime">-</strong></div>
+      <div>FPS: <strong id="fps">-</strong></div>
+    </div>
+
+    <div id="posPanel" class="panel">
+      <h4>位置信息</h4>
+      <div>经度: <span id="lon">-</span></div>
+      <div>纬度: <span id="lat">-</span></div>
+      <div>海拔: <span id="alt">-</span></div>
+    </div>
+
+    <!-- 功能区已移至侧边栏弹出菜单，点击侧边栏按钮查看 -->
+  </div>
+
+  <!-- 侧边栏二级弹出菜单（复用功能区内容） -->
+  <div id="sidebarPopover" class="panel" style="display:none; position:absolute; left:72px; top:80px; width:360px; z-index:6; transition:all 180ms ease;">
+    <h4 id="popoverTitle">功能区</h4>
+    <div id="popoverContent">
+    <div id="toolsSection" class="section-row">
+        <!-- 初始放置模型控制项 -->
+        <div id="modelControls">
+          <div style="margin-bottom:6px; color:#fff;">
+            预置模型:
+            <select id="builtinModelSelect" style="padding:4px; width:220px;"></select>
+            <button id="loadBuiltinBtn">加载预置</button>
+          </div>
+          <div>
+            <input id="modelUrlInput" type="text" placeholder="粘贴模型或 tileset.json 的 CDN URL" style="width:260px; padding:4px;" />
+            <button id="loadUrlBtn">加载 URL</button>
+          </div>
+          <div style="margin-top:6px;">
+            <input id="modelFileInput" type="file" accept=".glb,.gltf" />
+            <button id="loadFileBtn">加载本地文件</button>
+          </div>
+          <div style="margin-top:6px;">
+            <input id="assetIdInput" type="number" placeholder="Cesium ion assetId" style="width:160px; padding:4px;" />
+            <button id="loadIonBtn">从 ion 加载</button>
+          </div>
+        </div>
+
+      </div>
+
+      <div id="layersSection" class="section-row" style="display:none; color:#fff;">
+        <div>底图设置：</div>
+        <select id="basemapSelectLocal" style="padding:6px; width:100%; margin-top:6px;">
+          <option value="OpenStreetMap">OpenStreetMap</option>
+          <option value="Esri" selected>Esri World Imagery</option>
+          <option value="StamenToner">Stamen Toner</option>
+          <option value="None">无底图</option>
+        </select>
+        <div style="margin-top:8px;"><button id="btn-apply-basemap">应用</button></div>
+      </div>
+
+      <div id="viewsSection" class="section-row" style="display:none; color:#fff;">
+        <div>
+          <button id="btn-defaultview">默认全景</button>
+          <button id="btn-topview">顶部俯瞰</button>
+          <button id="btn-southview">南侧视角</button>
+          <button id="btn-eastview">东侧视角</button>
+          <button id="btn-closeview">近景视角</button>
+          <button id="btn-zoommodel">缩放到模型</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+
+  <script>
+    // 指定 Cesium 资源基址（使用 CDN）
+    window.CESIUM_BASE_URL = 'https://cdn.jsdelivr.net/npm/cesium@1.136/Build/Cesium/';
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/cesium@1.136/Build/Cesium/Cesium.js"></script>
+  <script src="main.js"></script>
+  <script src="perftest.js"></script>
+  <script>
+    // UI handlers — 调用 main.js 中导出的函数
+    document.getElementById('loadUrlBtn').addEventListener('click', function () {
+      const url = document.getElementById('modelUrlInput').value.trim();
+      if (url) window.loadModelFromUrl(url);
+    });
+    document.getElementById('loadFileBtn').addEventListener('click', function () {
+      const f = document.getElementById('modelFileInput').files[0];
+      if (!f) { alert('请选择本地 glb/gltf 文件'); return; }
+      const url = URL.createObjectURL(f);
+      // main.js 会追踪并在替换时 revoke blob URL
+      window.loadGlbUrl(url);
+    });
+    document.getElementById('loadIonBtn').addEventListener('click', function () {
+      const id = Number(document.getElementById('assetIdInput').value);
+      if (!id) { alert('请输入有效 assetId'); return; }
+      window.loadIonAsset(id);
+    });
+    // 载入预置模型清单并填充下拉
+    fetch('models/manifest.json').then(r => r.json()).then(list => {
+      const sel = document.getElementById('builtinModelSelect');
+      list.forEach(item => {
+        const o = document.createElement('option');
+        o.value = item.path;
+        o.textContent = item.name;
+        sel.appendChild(o);
+      });
+    }).catch(err => {
+      console.warn('无法加载 models/manifest.json', err);
+    });
+    document.getElementById('loadBuiltinBtn').addEventListener('click', function () {
+      const sel = document.getElementById('builtinModelSelect');
+      const url = sel.value;
+      if (!url) { alert('未选择预置模型'); return; }
+      window.loadModelFromUrl(url);
+    });
+    // 侧边栏按钮交互：测量、图层、视角等（弹出二级菜单）
+    function setActiveSidebar(id) {
+      document.querySelectorAll('.sidebar-btn').forEach(b => b.classList.remove('active'));
+      if (id) {
+        const el = document.getElementById(id); if (el) el.classList.add('active');
+      }
+    }
+
+    // 显示/隐藏侧边弹出菜单（通过显示/隐藏三个区块：tools/layers/views）
+    function togglePopover(type, btn) {
+      const pop = document.getElementById('sidebarPopover');
+      if (!pop) return;
+      const isOpen = pop.style.display === 'block' && pop.dataset.type === type;
+      if (isOpen) {
+        pop.style.display = 'none';
+        pop.dataset.type = '';
+        setActiveSidebar(null);
+        return;
+      }
+      const title = document.getElementById('popoverTitle');
+      const tools = document.getElementById('toolsSection');
+      const layers = document.getElementById('layersSection');
+      const views = document.getElementById('viewsSection');
+      // 隐藏所有区块
+      if (tools) tools.style.display = 'none';
+      if (layers) layers.style.display = 'none';
+      if (views) views.style.display = 'none';
+
+      pop.dataset.type = type;
+      if (type === 'tools') {
+        title.textContent = '工具 - 模型与加载';
+        if (tools) tools.style.display = 'block';
+      } else if (type === 'layers') {
+        title.textContent = '图层';
+        if (layers) layers.style.display = 'block';
+      } else if (type === 'views') {
+        title.textContent = '视角';
+        if (views) views.style.display = 'block';
+      }
+
+      // 定位弹出位置：窄屏时在工具栏上方居中，宽屏时靠近触发按钮上方
+      try {
+        pop.style.display = 'block';
+        pop.style.visibility = 'hidden';
+        // 强制浏览器计算尺寸
+        const popW = pop.offsetWidth || Math.min(380, window.innerWidth - 32);
+        const popH = pop.offsetHeight || 220;
+        const isNarrow = window.innerWidth <= 900;
+        if (isNarrow) {
+          const toolbar = document.getElementById('leftSidebar');
+          let left, top;
+          if (toolbar) {
+            const tRect = toolbar.getBoundingClientRect();
+            left = tRect.left + (tRect.width / 2) - (popW / 2);
+            top = tRect.top - popH - 12;
+          } else {
+            left = Math.max(8, (window.innerWidth - popW) / 2);
+            top = Math.max(8, window.innerHeight - popH - 86);
+          }
+          left = Math.max(8, Math.min(left, window.innerWidth - popW - 8));
+          if (top + popH > window.innerHeight - 8) top = Math.max(8, window.innerHeight - popH - 86);
+          pop.style.position = 'fixed';
+          pop.style.left = left + 'px';
+          pop.style.top = top + 'px';
+          pop.style.width = Math.min(popW, window.innerWidth - 32) + 'px';
+          pop.style.visibility = 'visible';
+        } else {
+          const rect = btn.getBoundingClientRect();
+          let left = rect.left + (rect.width / 2) - (popW / 2);
+          let top = rect.top - popH - 12;
+          left = Math.max(8, Math.min(left, window.innerWidth - popW - 8));
+          top = Math.max(8, top);
+          pop.style.position = 'absolute';
+          pop.style.left = left + 'px';
+          pop.style.top = top + 'px';
+          pop.style.visibility = 'visible';
+        }
+      } catch (e) {
+        try { pop.style.display = 'block'; } catch (e) {}
+      }
+
+      setActiveSidebar(btn.id);
+    }
+
+    document.getElementById('btn-measure-distance').addEventListener('click', function () { setActiveSidebar('btn-measure-distance'); window.startDistanceMeasure(); });
+    document.getElementById('btn-measure-area').addEventListener('click', function () { setActiveSidebar('btn-measure-area'); window.startAreaMeasure(); });
+    document.getElementById('btn-measure-profile').addEventListener('click', function () { setActiveSidebar('btn-measure-profile'); window.startProfileMeasure(); });
+    document.getElementById('btn-clear-measure').addEventListener('click', function () { setActiveSidebar(null); window.clearMeasurements(); });
+    document.getElementById('btn-layers').addEventListener('click', function (e) { togglePopover('layers', this); });
+    document.getElementById('btn-views').addEventListener('click', function (e) { togglePopover('views', this); });
+    document.getElementById('btn-tools').addEventListener('click', function (e) { togglePopover('tools', this); });
+
+    // 点击界面空白处关闭弹出
+    document.addEventListener('click', function (ev) {
+      const pop = document.getElementById('sidebarPopover');
+      const sidebar = document.getElementById('leftSidebar');
+      if (!pop || pop.style.display !== 'block') return;
+      if (sidebar.contains(ev.target)) return; // 点击侧栏按钮不关闭（按钮处理会切换）
+      if (pop.contains(ev.target)) return; // 点击弹出内部不关闭
+      pop.style.display = 'none'; pop.dataset.type = ''; setActiveSidebar(null);
+    });
+    // 绑定弹出内控件事件（基底图/视角/OSGB 上传）
+    const applyBtn = document.getElementById('btn-apply-basemap');
+    if (applyBtn) applyBtn.addEventListener('click', function () { const v = document.getElementById('basemapSelectLocal').value; setBaseMap(v); });
+    const bDefault = document.getElementById('btn-defaultview'); if (bDefault) bDefault.addEventListener('click', () => flyToDefaultView());
+    const bTop = document.getElementById('btn-topview'); if (bTop) bTop.addEventListener('click', () => flyToTopView());
+    const bTop2 = document.getElementById('btn-topview-pop'); if (bTop2) bTop2.addEventListener('click', () => flyToTopView());
+    const bSouth = document.getElementById('btn-southview'); if (bSouth) bSouth.addEventListener('click', () => flyToSouthView());
+    const bEast = document.getElementById('btn-eastview'); if (bEast) bEast.addEventListener('click', () => flyToEastView());
+    const bClose = document.getElementById('btn-closeview'); if (bClose) bClose.addEventListener('click', () => flyToCloseView());
+    const bZoom = document.getElementById('btn-zoommodel'); if (bZoom) bZoom.addEventListener('click', () => { try { if (currentTileset) viewer.zoomTo(currentTileset); else if (currentModelEntity) viewer.flyTo(currentModelEntity); } catch (e) {} });
+
+  </script>
+</body>
+</html>
